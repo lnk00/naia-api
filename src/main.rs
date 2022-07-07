@@ -1,22 +1,33 @@
+mod database;
 mod handlers;
+mod router;
+mod state;
 mod utils;
 
-use axum::{routing::get, Router};
-use handlers::ping::get_ping;
-use tower::ServiceBuilder;
-use tower_http::trace::TraceLayer;
+#[macro_use]
+extern crate dotenv_codegen;
+extern crate dotenv;
+
+use crate::{database::get_database_client, router::get_router};
+use dotenv::dotenv;
+use state::State;
+use std::{error::Error, sync::Arc};
 use utils::logging::setup_rust_logging;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn Error>> {
+    dotenv().ok();
     setup_rust_logging();
 
-    let app = Router::new()
-        .route("/", get(get_ping))
-        .layer(ServiceBuilder::new().layer(TraceLayer::new_for_http()));
+    let db = get_database_client().await?;
+    let state = Arc::new(State { db });
+    let app = get_router(state);
 
+    tracing::info!("Server listening on port {}...", 3000);
     axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
         .serve(app.into_make_service())
         .await
         .unwrap();
+
+    Ok(())
 }
